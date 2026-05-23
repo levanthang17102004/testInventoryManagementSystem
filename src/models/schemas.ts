@@ -24,8 +24,7 @@ export const inventoryReceiptItemSchema = z.object({
   unit_price: z.number().nonnegative(),
 });
 
-export const inventoryReceiptBodySchema = z.object({
-  receipt_no: z.string().min(1).max(50),
+const inventoryReceiptFieldsSchema = z.object({
   receipt_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   department_id: z.number().int().positive().optional().nullable(),
   warehouse_id: z.number().int().positive().optional().nullable(),
@@ -42,4 +41,10 @@ export const inventoryReceiptBodySchema = z.object({
   items: z.array(inventoryReceiptItemSchema).min(1),
 });
 
-export type InventoryReceiptBody = z.infer<typeof inventoryReceiptBodySchema>;
+/** Tạo phiếu — số phiếu do server tự sinh */
+export const inventoryReceiptCreateSchema = inventoryReceiptFieldsSchema;
+
+/** Cập nhật phiếu — không đổi số phiếu */
+export const inventoryReceiptUpdateSchema = inventoryReceiptFieldsSchema;
+
+export type InventoryReceiptBody = z.infer<typeof inventoryReceiptCreateSchema>;

@@ -2,9 +2,11 @@ import type { Request, Response } from "express";
 import type { PoolClient } from "pg";
 import { pool } from "../db/pool.js";
 import {
-  inventoryReceiptBodySchema,
+  inventoryReceiptCreateSchema,
+  inventoryReceiptUpdateSchema,
   type InventoryReceiptBody,
 } from "../models/schemas.js";
+import { generateReceiptNo } from "../utils/generateReceiptNo.js";
 import { handlePgError } from "../utils/pgError.js";
 import { routeParamInt } from "../utils/routeParam.js";
 
@@ -93,13 +95,36 @@ export async function getById(req: Request, res: Response): Promise<void> {
   res.json(receipt);
 }
 
+export async function previewNextNumber(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const raw = typeof req.query.date === "string" ? req.query.date : "";
+  const receiptDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(raw)
+      ? raw
+      : new Date().toISOString().slice(0, 10);
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const receipt_no = await generateReceiptNo(client, receiptDate);
+    await client.query("ROLLBACK");
+    res.json({ receipt_no, receipt_date: receiptDate });
+  } finally {
+    client.release();
+  }
+}
+
 export async function create(req: Request, res: Response): Promise<void> {
-  const data = inventoryReceiptBodySchema.parse(req.body);
+  const data = inventoryReceiptCreateSchema.parse(req.body);
   const totalAmount = sumItemsTotal(data.items);
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
+
+    const receiptNo = await generateReceiptNo(client, data.receipt_date);
 
     const receiptResult = await client.query(
       `INSERT INTO inventory_receipts (
@@ -111,7 +136,7 @@ export async function create(req: Request, res: Response): Promise<void> {
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
        ) RETURNING id`,
       [
-        data.receipt_no,
+        receiptNo,
         data.receipt_date,
         data.department_id ?? null,
         data.warehouse_id ?? null,
@@ -146,7 +171,7 @@ export async function create(req: Request, res: Response): Promise<void> {
 
 export async function update(req: Request, res: Response): Promise<void> {
   const id = routeParamInt(req, "id");
-  const data = inventoryReceiptBodySchema.parse(req.body);
+  const data = inventoryReceiptUpdateSchema.parse(req.body);
   const totalAmount = sumItemsTotal(data.items);
   const client = await pool.connect();
 
@@ -155,25 +180,23 @@ export async function update(req: Request, res: Response): Promise<void> {
 
     const { rowCount } = await client.query(
       `UPDATE inventory_receipts SET
-         receipt_no = $1,
-         receipt_date = $2,
-         department_id = $3,
-         warehouse_id = $4,
-         delivered_by = $5,
-         received_by = $6,
-         accountant = $7,
-         warehouse_keeper = $8,
-         reference_document = $9,
-         debit_account = $10,
-         credit_account = $11,
-         total_amount = $12,
-         total_amount_text = $13,
-         attached_documents_count = $14,
-         note = $15,
+         receipt_date = $1,
+         department_id = $2,
+         warehouse_id = $3,
+         delivered_by = $4,
+         received_by = $5,
+         accountant = $6,
+         warehouse_keeper = $7,
+         reference_document = $8,
+         debit_account = $9,
+         credit_account = $10,
+         total_amount = $11,
+         total_amount_text = $12,
+         attached_documents_count = $13,
+         note = $14,
          updated_at = CURRENT_TIMESTAMP
-       WHERE id = $16`,
+       WHERE id = $15`,
       [
-        data.receipt_no,
         data.receipt_date,
         data.department_id ?? null,
         data.warehouse_id ?? null,
